@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Simple To-Do List</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      background: #f3f4f6;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    /* Input and button layout */
+    #taskInput {
+      padding: 10px;
+      width: 250px;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    #taskInput:focus {
+      border-color: #4f8cff;
+      box-shadow: 0 0 5px #4f8cff60;
+    }
+
+    #addBtn {
+      padding: 10px 15px;
+      background: #4f8cff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    #addBtn:hover {
+      background: #3b72d1;
+    }
+
+    /* Task list styles */
+    ul {
+      padding: 0;
+      margin-top: 20px;
+    }
+
+    .task {
+      list-style: none;
+      background: white;
+      padding: 12px 15px;
+      border-radius: 8px;
+      margin: 10px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      transition: 0.2s;
+    }
+
+    .task:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    }
+
+    .task.completed span {
+      text-decoration: line-through;
+      color: gray;
+      opacity: 0.7;
+    }
+
+    /* Delete button */
+    .delete-btn {
+      background: #ff5a5a;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .delete-btn:hover {
+      background: #d94545;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>To-Do List</h2>
+
+  <!-- Input field and Add button -->
+  <input id="taskInput" type="text" placeholder="Enter a task">
+  <button id="addBtn">Add</button>
+
+  <!-- Task list -->
+  <ul id="taskList"></ul>
+
+
+<script>
+  // Array to store all tasks
+  let tasks = [];
+
+  // DOM elements
+  const input = document.getElementById("taskInput");
+  const addBtn = document.getElementById("addBtn");
+  const list = document.getElementById("taskList");
+
+  // Add task when clicking the "Add" button
+  addBtn.addEventListener("click", () => {
+    const text = input.value.trim();
+    if (text === "") return; // Ignore empty input
+
+    // Each task is stored as an object
+    const task = { text: text, completed: false };
+    tasks.push(task);
+
+    input.value = ""; // Clear input field
+    render();         // Update the task list
+  });
+
+  // Render all tasks to the page
+  function render() {
+    list.innerHTML = ""; // Clear list before re-rendering
+
+    tasks.forEach((task, index) => {
+      const li = document.createElement("li");
+      li.className = "task";
+
+      // Clicking the text toggles completion
+      const span = document.createElement("span");
+      span.textContent = task.text;
+      span.addEventListener("click", () => {
+        task.completed = !task.completed; // Toggle completed state
+        render();
+      });
+
+      // Delete button removes task
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "Delete";
+      delBtn.className = "delete-btn";
+      delBtn.addEventListener("click", () => {
+        tasks.splice(index, 1); // Remove from array
+        render();
+      });
+
+      // Add style if the task is completed
+      if (task.completed) {
+        li.classList.add("completed");
+      }
+
+      li.appendChild(span);
+      li.appendChild(delBtn);
+      list.appendChild(li);
+    });
+  }
+</script>
+
+</body>
+</html>
