@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>3D FPS Aim Trainer - Pro</title>
+
+<style>
+body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #f0f0f0; touch-action: none; }
+canvas { display: block; }
+
+#crosshair {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none; z-index: 10;
+    display: flex; justify-content: center; align-items: center;
+}
+.ch-line-h, .ch-line-v { position: absolute; background: #00ad00; }
+
+#hud {
+    position: absolute; top: 20px; left: 20px;
+    color: #333; font-size: 20px; font-weight: bold; pointer-events: none;
+    line-height: 1.4;
+}
+
+#settings {
+    position: absolute; top: 20px; right: 20px;
+    background: rgba(255,255,255,0.8); padding: 12px; border-radius: 8px;
+    color: #333; z-index: 30; display: flex; flex-direction: column; gap: 8px; border: 1px solid #ccc;
+}
+
+select, input[type=range] { background: #eee; color: #333; border: 1px solid #bbb; padding: 5px; cursor: pointer; }
+
+.overlay {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.95); color: #333; padding: 30px; border-radius: 20px;
+    text-align: center; z-index: 20; width: 80%; max-width: 350px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+button { background: #007bff; border: none; padding: 15px 30px; color: white; font-size: 18px; cursor: pointer; border-radius: 8px; margin-top: 15px; width: 100%; }
+
+#shoot-btn {
+    position: absolute; bottom: 40px; left: 40px;
+    width: 90px; height: 90px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 3px solid #666; border-radius: 50%;
+    color: #333; font-weight: bold;
+    display: flex; justify-content: center; align-items: center;
+    z-index: 15; user-select: none;
+}
+
+.hidden { display: none !important; }
+
+@media screen and (orientation: portrait) {
+    #rotate-hint {
+        display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: #fff; color: #000; z-index: 100; align-items: center; justify-content: center; text-align: center;
+    }
+}
+#rotate-hint { display: none; }
+</style>
+</head>
+
+<body>
+
+<div id="rotate-hint"><h1>🔄<br>Rotate to Landscape</h1></div>
+
+<div id="crosshair">
+    <div id="ch-h" class="ch-line-h"></div>
+    <div id="ch-v" class="ch-line-v"></div>
+</div>
+
+<div id="hud">
+    Targets: <span id="count">0</span> / 10<br>
+    Accuracy: <span id="accuracy-live">100</span>%
+</div>
+
+<div id="settings">
+    <label>Crosshair:</label>
+    <select id="crosshair-select">
+        <option value="classic">Classic</option>
+        <option value="dot">Dot</option>
+        <option value="large">Large</option>
+        <option value="thin">Thin</option>
+    </select>
+    <label>Sens: <span id="sens-value">0.0022</span></label>
+    <input type="range" id="sens-slider" min="0.0005" max="0.01" step="0.0005" value="0.0022">
+</div>
+
+<div id="shoot-btn" class="hidden">FIRE</div>
+
+<div id="start-screen" class="overlay">
+    <h2>FPS TRAINER</h2>
+    <p>Left hand to Fire | Right hand to Aim</p>
+    <button id="start-btn">START GAME</button>
+</div>
+
+<div id="result-screen" class="overlay hidden">
+    <h1 id="result-title">COMPLETE!</h1>
+    <p>Time: <span id="final-time">0</span>s</p>
+    <p>Accuracy: <span id="final-acc">0</span>%</p>
+    <button onclick="location.reload()">RETRY</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+let scene, camera, renderer, target;
+let score = 0, startTime, isPlaying = false;
+let yaw = 0, pitch = 0;
+let sensitivity = 0.0022;
+let particles = [];
+let totalClicks = 0, hits = 0;
+const maxScore = 10;
+
+const crosshairConfigs = {
+    classic: { w:20,h:2,r:0 },
+    dot:{ w:4,h:4,r:50 },
+    large:{ w:40,h:3,r:0 },
+    thin:{ w:25,h:1,r:0 }
+};
+
+function updateCrosshairStyle(type){
+    const c = crosshairConfigs[type];
+    const h = document.getElementById('ch-h');
+    const v = document.getElementById('ch-v');
+    h.style.width=c.w+"px"; h.style.height=c.h+"px"; h.style.borderRadius=c.r+"%";
+    v.style.width=c.h+"px"; v.style.height=c.w+"px"; v.style.borderRadius=c.r+"%";
+    v.style.display=(type==='dot')?'none':'block';
+}
+
+function init(){
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xfafafa);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(5, 10, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const floorGeo = new THREE.PlaneGeometry(100, 100);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(100, 40, 0xdddddd, 0xeeeeee);
+    grid.position.y = -1.99;
+    scene.add(grid);
+
+    updateCrosshairStyle('classic');
+
+    document.getElementById('crosshair-select').addEventListener('change',(e)=>updateCrosshairStyle(e.target.value));
+    
+    const slider = document.getElementById('sens-slider');
+    slider.addEventListener('input',()=>{
+        sensitivity = parseFloat(slider.value);
+        document.getElementById('sens-value').innerText = sensitivity.toFixed(4);
+    });
+
+    // Control handling
+    document.addEventListener('mousemove',(e)=>{
+        if(document.pointerLockElement === document.body) handleRotation(e.movementX, e.movementY);
+    });
+
+    let lastTouchX = 0, lastTouchY = 0;
+    window.addEventListener('touchstart', (e) => {
+        if(!isPlaying) return;
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+    }, {passive: false});
+
+    window.addEventListener('touchmove', (e) => {
+        if(!isPlaying) return;
+        const touch = e.touches[0];
+        if (touch.clientX > window.innerWidth / 3) {
+            const dx = touch.clientX - lastTouchX;
+            const dy = touch.clientY - lastTouchY;
+            handleRotation(dx * 2, dy * 2);
+        }
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+        e.preventDefault();
+    }, {passive: false});
+
+    function handleRotation(dx, dy) {
+        yaw -= dx * sensitivity;
+        pitch -= dy * sensitivity;
+        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    }
+
+    const shootAction = () => { if(isPlaying) shoot(); };
+    window.addEventListener('mousedown', (e) => { 
+        if(e.button === 0 && (document.pointerLockElement || /Android|iPhone|iPad/i.test(navigator.userAgent))) shootAction(); 
+    });
+    document.getElementById('shoot-btn').addEventListener('touchstart', (e) => { shootAction(); e.preventDefault(); e.stopPropagation(); });
+
+    document.getElementById('start-btn').addEventListener('click', async () => {
+        if (screen.orientation && screen.orientation.lock) {
+            try { await screen.orientation.lock('landscape'); } catch(e) {}
+        }
+        if(!/Android|iPhone|iPad/i.test(navigator.userAgent)) document.body.requestPointerLock();
+        startGame();
+    });
+
+    animate();
+}
+
+function createExplosion(pos) {
+    const particleCount = 12;
+    const geometry = new THREE.SphereGeometry(0.06, 8, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+    for (let i = 0; i < particleCount; i++) {
+        const p = new THREE.Mesh(geometry, material);
+        p.position.copy(pos);
+        p.userData.velocity = new THREE.Vector3((Math.random()-0.5)*0.15, (Math.random()-0.5)*0.15, (Math.random()-0.5)*0.15);
+        p.userData.life = 1.0;
+        scene.add(p);
+        particles.push(p);
+    }
+}
+
+function spawnTarget(){
+    if(target) scene.remove(target);
+    const g = new THREE.SphereGeometry(0.3, 32, 32);
+    const m = new THREE.MeshStandardMaterial({color:0xff4444, roughness: 0.4, metalness: 0.2});
+    target = new THREE.Mesh(g, m);
+    target.castShadow = true;
+
+    const dist = 8;
+    const ax = (Math.random() - 0.5) * 0.8; 
+    const ay = (Math.random() - 0.5) * 0.4; 
+    
+    target.position.set(Math.sin(ax) * dist, ay * dist + 0.8, -Math.cos(ax) * dist);
+    scene.add(target);
+}
+
+function shoot(){
+    totalClicks++;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+    const intersects = raycaster.intersectObject(target);
+
+    if(intersects.length > 0){
+        hits++;
+        // Hit Feedback: Flash target white
+        target.material.emissive.setHex(0xffffff);
+        setTimeout(() => { if(target) target.material.emissive.setHex(0x000000); }, 50);
+
+        createExplosion(target.position);
+        score++;
+        document.getElementById('count').innerText = score;
+        if(score < maxScore) spawnTarget();
+        else finishGame();
+    }
+    
+    // Update live accuracy
+    const acc = ((hits / totalClicks) * 100).toFixed(0);
+    document.getElementById('accuracy-live').innerText = acc;
+}
+
+function startGame(){
+    document.getElementById('start-screen').classList.add('hidden');
+    if(/Android|iPhone|iPad/i.test(navigator.userAgent)) document.getElementById('shoot-btn').classList.remove('hidden');
+    score = 0; totalClicks = 0; hits = 0; isPlaying = true; startTime = Date.now();
+    spawnTarget();
+}
+
+function finishGame(){
+    isPlaying = false;
+    document.exitPointerLock?.();
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    const finalAcc = ((hits / totalClicks) * 100).toFixed(1);
+    
+    document.getElementById('final-time').innerText = duration;
+    document.getElementById('final-acc').innerText = finalAcc;
+    document.getElementById('result-screen').classList.remove('hidden');
+    document.getElementById('shoot-btn').classList.add('hidden');
+}
+
+function animate(){
+    requestAnimationFrame(animate);
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.position.add(p.userData.velocity);
+        p.userData.velocity.y -= 0.003;
+        p.userData.life -= 0.03;
+        p.scale.setScalar(p.userData.life);
+        if (p.userData.life <= 0) {
+            scene.remove(p);
+            particles.splice(i, 1);
+        }
+    }
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+init();
+</script>
+</body>
+</html>
